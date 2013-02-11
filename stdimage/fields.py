@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-import os, shutil
+import os
+import shutil
 
 from django.conf import settings
 from django.core.files.storage import FileSystemStorage
@@ -23,11 +24,38 @@ class ThumbnailField(object):
     def path(self):
         return self.storage.path(self.name)
 
+    def delete(self):
+        return self.storage.delete(self.name)
+
+    def open(self):
+        self.file = self.storage.open(self.name)
+
+    def chunks(self, chunk_size=None):
+        """
+        Read the file and yield chucks of ``chunk_size`` bytes (defaults to
+        ``UploadedFile.DEFAULT_CHUNK_SIZE``).
+        """
+        if not chunk_size:
+            chunk_size = 64 * 2 ** 10
+
+        if hasattr(self.file, 'seek'):
+            self.file.seek(0)
+        # Assume the pointer is at zero...
+        counter = self.file.size
+
+        while counter > 0:
+            yield self.file.read(chunk_size)
+            counter -= chunk_size
+
+    def close(self):
+        self.file.close()
+
     def url(self):
         return self.storage.url(self.name)
 
     def size(self):
         return self.storage.size(self.name)
+
 
 class StdImageFileDescriptor(ImageFileDescriptor):
     """ The thumbnail property of the field should be accessible in instance
@@ -37,6 +65,7 @@ class StdImageFileDescriptor(ImageFileDescriptor):
     def __set__(self, instance, value):
         super(StdImageFileDescriptor, self).__set__(instance, value)
         self.field._set_thumbnail(instance)
+
 
 class StdImageField(ImageField):
     """Django field that behaves as ImageField, with some extra features like:
@@ -51,8 +80,9 @@ class StdImageField(ImageField):
     def __init__(self, *args, **kwargs):
 
         """Added fields:
-            - size: a tuple containing width and height to resize image, and
-            an optional boolean setting if is wanted forcing that size (None for not resizing).
+            - size: a tuple containing width and height to resize
+            image, and an optional boolean setting if is wanted
+            forcing that size (None for not resizing).
                 * Example: (640, 480, True) -> Will resize image to a width of
                 640px and a height of 480px. File will be cutted if necessary
                 for forcing te image to have the desired size
@@ -109,16 +139,16 @@ class StdImageField(ImageField):
         from PIL import Image, ImageOps
         img = Image.open(filename)
         if (img.size[WIDTH] > size['width'] or
-            img.size[HEIGHT] > size['height']):
+                img.size[HEIGHT] > size['height']):
 
             #If the image is big resize it with the cheapest resize algorithm
             factor = 1
-            while (img.size[0]/factor > 2*size['width'] and
-                   img.size[1]*2/factor > 2*size['height']):
-                factor *=2
+            while (img.size[0] / factor > 2 * size['width'] and
+                   img.size[1] * 2 / factor > 2 * size['height']):
+                factor *= 2
             if factor > 1:
-                img.thumbnail((int(img.size[0]/factor),
-                               int(img.size[1]/factor)), Image.NEAREST)
+                img.thumbnail((int(img.size[0] / factor),
+                               int(img.size[1] / factor)), Image.NEAREST)
 
             if size['force']:
                 img = ImageOps.fit(img, (size['width'], size['height']),
@@ -138,11 +168,14 @@ class StdImageField(ImageField):
 
         if getattr(instance, self.name):
             filename = getattr(instance, self.name).path
-            ext = os.path.splitext(filename)[1].lower().replace('jpg', 'jpeg')
-            dst = self.generate_filename(instance, '%s_%s%s' % (self.name,
-                                                instance._get_pk_val(), ext))
+            ext = os.path.splitext(filename)[1].lower().replace('jpeg', 'jpg')
+            dst = self.generate_filename(instance, '%s_%s%s' % (
+                self.name, instance._get_pk_val(), ext))
             dst_fullpath = os.path.join(settings.MEDIA_ROOT, dst)
-            if os.path.abspath(filename) != os.path.abspath(dst_fullpath):
+            thumbnail_exists = not self.thumbnail_size \
+                or os.path.isfile(self._get_thumbnail_filename(filename))
+            if os.path.abspath(filename) != os.path.abspath(dst_fullpath) or \
+                    not thumbnail_exists:
                 os.rename(filename, dst_fullpath)
                 if self.size:
                     self._resize_image(dst_fullpath, self.size)
@@ -162,12 +195,11 @@ class StdImageField(ImageField):
         """
 
         if getattr(instance, self.name):
-            filename = self.generate_filename(instance,
-                        os.path.basename(getattr(instance, self.name).path))
+            filename = self.generate_filename(
+                instance, os.path.basename(getattr(instance, self.name).path))
             thumbnail_filename = self._get_thumbnail_filename(filename)
             thumbnail_field = ThumbnailField(thumbnail_filename)
             setattr(getattr(instance, self.name), 'thumbnail', thumbnail_field)
-
 
     def formfield(self, **kwargs):
         """Specify form field and widget to be used on the forms"""
@@ -199,7 +231,8 @@ class StdImageField(ImageField):
         """
 
         if value:
-            return super(StdImageField, self).get_db_prep_save(value, connection=connection)
+            return super(StdImageField, self).get_db_prep_save(
+                value, connection=connection)
         else:
             return u''
 
