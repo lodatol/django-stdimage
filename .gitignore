@@ -17,3 +17,4 @@ media
 djangorc
 local_settings.py
 .tm_properties
+django_stdimage.egg-info/
