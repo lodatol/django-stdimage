@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import os
+import errno
 import shutil
 
 from django.conf import settings
@@ -176,6 +177,13 @@ class StdImageField(ImageField):
                 or os.path.isfile(self._get_thumbnail_filename(filename))
             if os.path.abspath(filename) != os.path.abspath(dst_fullpath) or \
                     not thumbnail_exists:
+                try:
+                    _dir = os.path.abspath(os.path.join(dst_fullpath,'..'))
+                    os.makedirs(_dir)
+                except OSError as exc:
+                    if exc.errno == errno.EEXIST and os.path.isdir(_dir):
+                        pass
+                    else: raise
                 os.rename(filename, dst_fullpath)
                 if self.size:
                     self._resize_image(dst_fullpath, self.size)
